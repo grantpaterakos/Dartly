@@ -36,28 +36,14 @@ const isStandalone = window.navigator.standalone === true ||
 // ── Expose to global scope ──
 window.FB = { auth, db, googleProvider, signInWithPopup, signInWithRedirect, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, doc, setDoc, getDoc, updateDoc, collection, addDoc, query, where, getDocs, onSnapshot, serverTimestamp, orderBy, limit, isStandalone };
 
-// ── Handle redirect result (fires after Google redirect on PWA) ──
-getRedirectResult(auth).then(async (result) => {
-  if (result?.user) {
-    window.currentUser = result.user;
-    const profileRef = doc(db, 'users', result.user.uid);
-    const profileSnap = await getDoc(profileRef);
-    if (profileSnap.exists()) {
-      window.userProfile = profileSnap.data();
-      showMainApp();
-    } else {
-      showCreateProfile();
-    }
-  }
-}).catch((e) => {
-  console.error('Redirect result error:', e);
-});
+// ── Single auth handler — covers both redirect result and normal auth state ──
+let appInitialized = false;
 
-// ── Auth state listener ──
-onAuthStateChanged(auth, async (user) => {
+async function handleUser(user) {
+  if (appInitialized) return;
   if (user) {
+    appInitialized = true;
     window.currentUser = user;
-    // Load profile
     const profileRef = doc(db, 'users', user.uid);
     const profileSnap = await getDoc(profileRef);
     if (profileSnap.exists()) {
@@ -67,8 +53,32 @@ onAuthStateChanged(auth, async (user) => {
       showCreateProfile();
     }
   } else {
-    window.currentUser = null;
-    window.userProfile = null;
+    // Only show auth screen if no redirect is in progress
+    const redirectPending = sessionStorage.getItem('dartly_redirect');
+    if (!redirectPending) {
+      document.getElementById('loading-screen').style.display = 'none';
+      showAuthScreen();
+    }
+  }
+}
+
+// Check redirect result first
+getRedirectResult(auth).then(async (result) => {
+  sessionStorage.removeItem('dartly_redirect');
+  if (result?.user) {
+    await handleUser(result.user);
+  }
+}).catch((e) => {
+  sessionStorage.removeItem('dartly_redirect');
+  console.error('Redirect error:', e);
+  showToast('Sign-in failed — please try again');
+});
+
+// Auth state listener
+onAuthStateChanged(auth, async (user) => {
+  await handleUser(user);
+  if (!user && !appInitialized) {
+    document.getElementById('loading-screen').style.display = 'none';
     showAuthScreen();
   }
 });
@@ -877,13 +887,17 @@ function waitForFB() {
 async function signInGoogle() {
   await waitForFB();
   try {
-    // Use redirect on PWA (home screen), popup on browser
     if (window.FB.isStandalone) {
+      // Flag that a redirect is in progress so auth listener doesn't show login screen on return
+      sessionStorage.setItem('dartly_redirect', '1');
       await window.FB.signInWithRedirect(window.FB.auth, window.FB.googleProvider);
     } else {
       await window.FB.signInWithPopup(window.FB.auth, window.FB.googleProvider);
     }
-  } catch(e) { showToast('Google sign-in failed: '+e.message); }
+  } catch(e) {
+    sessionStorage.removeItem('dartly_redirect');
+    showToast('Google sign-in failed — try again');
+  }
 }
 
 function switchAuthTab(tab, el) {
@@ -978,6 +992,10 @@ function showAuthScreen() {
   document.getElementById('loading-screen').style.display='none';
   goScreen('screen-auth');
 }
+// Called by firebase module
+window.showAuthScreen = showAuthScreen;
+window.showMainApp = showMainApp;
+window.showCreateProfile = showCreateProfile;
 function showCreateProfile() {
   document.getElementById('loading-screen').style.display='none';
   goScreen('screen-profile-create');
