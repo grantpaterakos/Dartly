@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en" data-theme="dark">
 <head>
@@ -13,7 +12,7 @@
 <!-- Firebase -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js";
-import { getAuth, signInWithPopup, GoogleAuthProvider, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js";
+import { getAuth, signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js";
 import { getFirestore, doc, setDoc, getDoc, updateDoc, collection, addDoc, query, where, getDocs, onSnapshot, serverTimestamp, orderBy, limit } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -30,8 +29,29 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const googleProvider = new GoogleAuthProvider();
 
+// ── Detect standalone PWA mode ──
+const isStandalone = window.navigator.standalone === true ||
+  window.matchMedia('(display-mode: standalone)').matches;
+
 // ── Expose to global scope ──
-window.FB = { auth, db, googleProvider, signInWithPopup, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, doc, setDoc, getDoc, updateDoc, collection, addDoc, query, where, getDocs, onSnapshot, serverTimestamp, orderBy, limit };
+window.FB = { auth, db, googleProvider, signInWithPopup, signInWithRedirect, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, doc, setDoc, getDoc, updateDoc, collection, addDoc, query, where, getDocs, onSnapshot, serverTimestamp, orderBy, limit, isStandalone };
+
+// ── Handle redirect result (fires after Google redirect on PWA) ──
+getRedirectResult(auth).then(async (result) => {
+  if (result?.user) {
+    window.currentUser = result.user;
+    const profileRef = doc(db, 'users', result.user.uid);
+    const profileSnap = await getDoc(profileRef);
+    if (profileSnap.exists()) {
+      window.userProfile = profileSnap.data();
+      showMainApp();
+    } else {
+      showCreateProfile();
+    }
+  }
+}).catch((e) => {
+  console.error('Redirect result error:', e);
+});
 
 // ── Auth state listener ──
 onAuthStateChanged(auth, async (user) => {
@@ -857,7 +877,12 @@ function waitForFB() {
 async function signInGoogle() {
   await waitForFB();
   try {
-    await window.FB.signInWithPopup(window.FB.auth, window.FB.googleProvider);
+    // Use redirect on PWA (home screen), popup on browser
+    if (window.FB.isStandalone) {
+      await window.FB.signInWithRedirect(window.FB.auth, window.FB.googleProvider);
+    } else {
+      await window.FB.signInWithPopup(window.FB.auth, window.FB.googleProvider);
+    }
   } catch(e) { showToast('Google sign-in failed: '+e.message); }
 }
 
