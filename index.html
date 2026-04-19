@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en" data-theme="dark">
 <head>
@@ -1664,7 +1663,7 @@ function renderCricketPad(pad) {
   // Miss button
   const mw=document.createElement('div');mw.style.marginTop='6px';
   const mb=document.createElement('button');
-  mb.style.cssText='width:100%;background:transparent;border:1px solid var(--border);border-radius:10px;padding:10px;font-family:'DM Mono';font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--muted2);cursor:pointer;transition:all .15s;';
+  mb.style.cssText='width:100%;background:transparent;border:1px solid var(--border);border-radius:10px;padding:10px;font-family:DM Mono,monospace;font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--muted2);cursor:pointer;transition:all .15s;';
   mb.innerHTML='Miss / Not Relevant';
   mb.onmouseenter=()=>mb.style.borderColor='var(--border2)';
   mb.onmouseleave=()=>mb.style.borderColor='var(--border)';
@@ -1728,14 +1727,16 @@ function hitCricket(num){
   let pts=0,justClosed=false,marksAdded=0;
 
   for(let i=0;i<mult;i++){
-    const cur=G.players[p].marks[num]||0;
+    const cur=G.players[p].marks[num]||0; // re-read each iteration so post-close marks are accurate
     if(cur<3){
       G.players[p].marks[num]++;
       marksAdded++;
       if((cur+1)===3)justClosed=true;
     }else{
       if(G.mode==='standard'||G.mode==='capped'||G.mode==='wild'||G.mode==='speed'){
-        G.players.forEach((_,oi)=>{if(oi!==p&&!isClosed(oi,num)){G.players[p].score+=nv;pts+=nv;}});
+        // Score nv once if ANY opponent hasn't closed (not once per unclosed opponent)
+        const anyOpen=G.players.some((_,oi)=>oi!==p&&!isClosed(oi,num));
+        if(anyOpen){G.players[p].score+=nv;pts+=nv;}
         if(G.mode==='capped')G.players[p].score=Math.min(G.players[p].score,G.capLimit);
       }else if(G.mode==='cutthroat'){
         G.players.forEach((_,oi)=>{if(oi!==p&&!isClosed(oi,num)){G.players[oi].score+=nv;pts+=nv;}});
